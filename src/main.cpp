@@ -12,6 +12,7 @@
 #include <iostream>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <random>
 #include <span>
 #include <string>
@@ -167,20 +168,33 @@ void ensure_io(bool condition, std::string_view message) {
 
 auto run_fstream(const std::filesystem::path &path,
                  std::span<const std::byte> payload, std::size_t chunk_size,
-                 bool keep_files) -> measurement {
+                 std::optional<std::size_t> custom_buffer, bool keep_files)
+    -> measurement {
 
    measurement result;
-   result.method = "fstream";
+   result.method =
+       std::format("fstream-{}", (custom_buffer) ? "custom-buffer" : "default");
    result.expected_hash = hash_payload(payload);
-   std::vector<std::byte> buffer(std::min(chunk_size, payload.size()));
+
+   std::vector<std::byte> io_buffer(std::min(chunk_size, payload.size()));
+   std::vector<char> filebuf_buffer;
+   if (custom_buffer) {
+      filebuf_buffer.resize(*custom_buffer);
+   }
 
    {
-      std::ofstream out(path, std::ios::binary | std::ios::trunc);
-      ensure_io(out.is_open(), "fstream: could not open output file");
+      std::filebuf fbuf{};
+      if (custom_buffer) {
+         fbuf.pubsetbuf(filebuf_buffer.data(), *custom_buffer);
+      }
+      fbuf.open(path, std::ios::out | std::ios::binary | std::ios::trunc);
+      ensure_io(fbuf.is_open(), "fstream: could not open output file");
+      std::ostream out(&fbuf);
+
       const auto start = clock_type::now();
       std::size_t offset = 0;
       while (offset < payload.size()) {
-         const auto count = std::min(buffer.size(), payload.size() - offset);
+         const auto count = std::min(io_buffer.size(), payload.size() - offset);
          out.write(reinterpret_cast<const char *>(payload.data() + offset),
                    static_cast<std::streamsize>(count));
          ensure_io(static_cast<bool>(out), "fstream: write failed");
@@ -192,19 +206,26 @@ auto run_fstream(const std::filesystem::path &path,
    }
 
    {
-      std::ifstream in(path, std::ios::binary);
-      ensure_io(in.is_open(), "fstream: could not open input file");
+      std::filebuf fbuf{};
+      if (custom_buffer) {
+         fbuf.pubsetbuf(filebuf_buffer.data(),
+                        static_cast<std::streamsize>(*custom_buffer));
+      }
+      fbuf.open(path, std::ios::in | std::ios::binary);
+      ensure_io(fbuf.is_open(), "fstream: could not open output file");
+      std::istream in(&fbuf);
+
       auto start = clock_type::now();
       std::uint64_t hash = hash_offset;
       std::size_t total = 0;
       while (total < payload.size()) {
-         const auto count = std::min(buffer.size(), payload.size() - total);
-         in.read(reinterpret_cast<char *>(buffer.data()),
+         const auto count = std::min(io_buffer.size(), payload.size() - total);
+         in.read(reinterpret_cast<char *>(io_buffer.data()),
                  static_cast<std::streamsize>(count));
          const auto got = in.gcount();
          ensure_io(got > 0, "fstream: unexpected end of file or read failure");
          hash = hash_bytes(
-             hash, std::span<const std::byte>(buffer.data(),
+             hash, std::span<const std::byte>(io_buffer.data(),
                                               static_cast<std::size_t>(got)));
          total += static_cast<std::size_t>(got);
       }
@@ -225,16 +246,18 @@ auto run_fstream(const std::filesystem::path &path,
 
 auto run_stdio(const std::filesystem::path &path,
                std::span<const std::byte> payload, std::size_t chunk_size,
-               std::size_t custom_buffer_size, bool custom_buffer,
-               bool keep_files) -> measurement {
+               std::optional<std::size_t> custom_buffer, bool keep_files)
+    -> measurement {
 
    measurement result;
-   result.method = (custom_buffer) ? "stdio-custom-buffer" : "stdio-default";
+   result.method =
+       std::format("stdio-{}", (custom_buffer) ? "custom-buffer" : "default");
    result.expected_hash = hash_payload(payload);
+
    std::vector<std::byte> io_buffer(std::min(chunk_size, payload.size()));
    std::vector<char> stdio_buffer;
    if (custom_buffer) {
-      stdio_buffer.resize(custom_buffer_size);
+      stdio_buffer.resize(*custom_buffer);
    }
 
    {
@@ -246,6 +269,7 @@ auto run_stdio(const std::filesystem::path &path,
                                 stdio_buffer.size()) == 0,
                    "setvbuf failed for output file");
       }
+
       const auto start = clock_type::now();
       std::size_t offset = 0;
       while (offset < payload.size()) {
@@ -270,6 +294,7 @@ auto run_stdio(const std::filesystem::path &path,
                                 stdio_buffer.size()) == 0,
                    "setvbuf failed for input file");
       }
+
       const auto start = clock_type::now();
       std::uint64_t hash = hash_offset;
       std::size_t total = 0;
@@ -298,8 +323,11 @@ auto run_stdio(const std::filesystem::path &path,
 }
 
 void print_result(const measurement &result, std::uint64_t bytes) {
-   std::cout << std::format("{:<22} write={:>9.2f} MiB/s ({:}s) read={:>9} "
-                            "({}s) bytes={} verified={}\n",
+   std::cout << std::format("{:<22} "
+                            "write={:>9.2f} MiB/s ({:0<9}s) "
+                            "read={:>9.2f} MiB/s ({:0<9}s) "
+                            "bytes={} "
+                            "verified={}\n",
                             result.method, result.write_mib_s,
                             result.write_seconds, result.read_mib_s,
                             result.read_seconds, bytes,
@@ -327,13 +355,17 @@ auto main(int argc, char **argv) -> int {
 
       std::vector<measurement> results;
       const auto chunk_size = std::min(default_chunk_size, payload.size());
-      results.push_back(run_fstream(config.directory / "fstream.bin", payload,
-                                    chunk_size, config.keep_files));
+      results.push_back(run_fstream(config.directory / "fstream-default.bin",
+                                    payload, chunk_size, std::nullopt,
+                                    config.keep_files));
+      results.push_back(
+          run_fstream(config.directory / "fstream-custom-buffer.bin", payload,
+                      chunk_size, config.buffer_size, config.keep_files));
       results.push_back(run_stdio(config.directory / "stdio-default.bin",
-                                  payload, chunk_size, config.buffer_size,
-                                  false, config.keep_files));
+                                  payload, chunk_size, std::nullopt,
+                                  config.keep_files));
       results.push_back(run_stdio(config.directory / "stdio-custom-buffer.bin",
-                                  payload, chunk_size, config.buffer_size, true,
+                                  payload, chunk_size, config.buffer_size,
                                   config.keep_files));
 
       std::cout << std::format("{:<22} write MiB/s / seconds | read MiB/s / "
