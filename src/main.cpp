@@ -168,24 +168,25 @@ void ensure_io(bool condition, std::string_view message) {
 
 auto run_fstream(const std::filesystem::path &path,
                  std::span<const std::byte> payload, std::size_t chunk_size,
-                 std::optional<std::size_t> custom_buffer, bool keep_files)
+                 std::optional<std::size_t> buffer_size, bool keep_files)
     -> measurement {
 
    measurement result;
    result.method =
-       std::format("fstream-{}", (custom_buffer) ? "custom-buffer" : "default");
+       std::format("fstream-{}", (buffer_size) ? "custom-buffer" : "default");
    result.expected_hash = hash_payload(payload);
 
-   std::vector<std::byte> io_buffer(std::min(chunk_size, payload.size()));
-   std::vector<char> filebuf_buffer;
-   if (custom_buffer) {
-      filebuf_buffer.resize(*custom_buffer);
+   std::vector<std::byte> chunk_array(std::min(chunk_size, payload.size()));
+   std::vector<char> buffer_array;
+   if (buffer_size) {
+      buffer_array.resize(*buffer_size);
    }
 
    {
       std::filebuf fbuf{};
-      if (custom_buffer) {
-         fbuf.pubsetbuf(filebuf_buffer.data(), *custom_buffer);
+      if (buffer_size) {
+         fbuf.pubsetbuf(buffer_array.data(),
+                        static_cast<std::streamsize>(*buffer_size));
       }
       fbuf.open(path, std::ios::out | std::ios::binary | std::ios::trunc);
       ensure_io(fbuf.is_open(), "fstream: could not open output file");
@@ -194,7 +195,8 @@ auto run_fstream(const std::filesystem::path &path,
       const auto start = clock_type::now();
       std::size_t offset = 0;
       while (offset < payload.size()) {
-         const auto count = std::min(io_buffer.size(), payload.size() - offset);
+         const auto count =
+             std::min(chunk_array.size(), payload.size() - offset);
          out.write(reinterpret_cast<const char *>(payload.data() + offset),
                    static_cast<std::streamsize>(count));
          ensure_io(static_cast<bool>(out), "fstream: write failed");
@@ -207,9 +209,9 @@ auto run_fstream(const std::filesystem::path &path,
 
    {
       std::filebuf fbuf{};
-      if (custom_buffer) {
-         fbuf.pubsetbuf(filebuf_buffer.data(),
-                        static_cast<std::streamsize>(*custom_buffer));
+      if (buffer_size) {
+         fbuf.pubsetbuf(buffer_array.data(),
+                        static_cast<std::streamsize>(*buffer_size));
       }
       fbuf.open(path, std::ios::in | std::ios::binary);
       ensure_io(fbuf.is_open(), "fstream: could not open output file");
@@ -219,13 +221,14 @@ auto run_fstream(const std::filesystem::path &path,
       std::uint64_t hash = hash_offset;
       std::size_t total = 0;
       while (total < payload.size()) {
-         const auto count = std::min(io_buffer.size(), payload.size() - total);
-         in.read(reinterpret_cast<char *>(io_buffer.data()),
+         const auto count =
+             std::min(chunk_array.size(), payload.size() - total);
+         in.read(reinterpret_cast<char *>(chunk_array.data()),
                  static_cast<std::streamsize>(count));
          const auto got = in.gcount();
          ensure_io(got > 0, "fstream: unexpected end of file or read failure");
          hash = hash_bytes(
-             hash, std::span<const std::byte>(io_buffer.data(),
+             hash, std::span<const std::byte>(chunk_array.data(),
                                               static_cast<std::size_t>(got)));
          total += static_cast<std::size_t>(got);
       }
@@ -246,34 +249,35 @@ auto run_fstream(const std::filesystem::path &path,
 
 auto run_stdio(const std::filesystem::path &path,
                std::span<const std::byte> payload, std::size_t chunk_size,
-               std::optional<std::size_t> custom_buffer, bool keep_files)
+               std::optional<std::size_t> buffer_size, bool keep_files)
     -> measurement {
 
    measurement result;
    result.method =
-       std::format("stdio-{}", (custom_buffer) ? "custom-buffer" : "default");
+       std::format("stdio-{}", (buffer_size) ? "custom-buffer" : "default");
    result.expected_hash = hash_payload(payload);
 
-   std::vector<std::byte> io_buffer(std::min(chunk_size, payload.size()));
-   std::vector<char> stdio_buffer;
-   if (custom_buffer) {
-      stdio_buffer.resize(*custom_buffer);
+   std::vector<std::byte> chunk_array(std::min(chunk_size, payload.size()));
+   std::vector<char> buffer_array;
+   if (buffer_size) {
+      buffer_array.resize(*buffer_size);
    }
 
    {
       std::FILE *file = std::fopen(path.string().c_str(), "wb");
       ensure_io(file != nullptr, "fopen: could not open output file");
       std::unique_ptr<std::FILE, file_closer> handle(file);
-      if (custom_buffer) {
-         ensure_io(std::setvbuf(file, stdio_buffer.data(), _IOFBF,
-                                stdio_buffer.size()) == 0,
+      if (buffer_size) {
+         ensure_io(std::setvbuf(file, buffer_array.data(), _IOFBF,
+                                buffer_array.size()) == 0,
                    "setvbuf failed for output file");
       }
 
       const auto start = clock_type::now();
       std::size_t offset = 0;
       while (offset < payload.size()) {
-         const auto count = std::min(io_buffer.size(), payload.size() - offset);
+         const auto count =
+             std::min(chunk_array.size(), payload.size() - offset);
          const auto written =
              std::fwrite(payload.data() + offset, 1, count, file);
          ensure_io(written == count, "fwrite failed");
@@ -289,9 +293,9 @@ auto run_stdio(const std::filesystem::path &path,
       std::FILE *file = std::fopen(path.string().c_str(), "rb");
       ensure_io(file != nullptr, "fopen: could not open input file");
       std::unique_ptr<std::FILE, file_closer> handle(file);
-      if (custom_buffer) {
-         ensure_io(std::setvbuf(file, stdio_buffer.data(), _IOFBF,
-                                stdio_buffer.size()) == 0,
+      if (buffer_size) {
+         ensure_io(std::setvbuf(file, buffer_array.data(), _IOFBF,
+                                buffer_array.size()) == 0,
                    "setvbuf failed for input file");
       }
 
@@ -299,11 +303,12 @@ auto run_stdio(const std::filesystem::path &path,
       std::uint64_t hash = hash_offset;
       std::size_t total = 0;
       while (total < payload.size()) {
-         const auto count = std::min(io_buffer.size(), payload.size() - total);
-         const auto got = std::fread(io_buffer.data(), 1, count, file);
+         const auto count =
+             std::min(chunk_array.size(), payload.size() - total);
+         const auto got = std::fread(chunk_array.data(), 1, count, file);
          ensure_io(got > 0, "fread failed or reached unexpected end of file");
          hash = hash_bytes(hash,
-                           std::span<const std::byte>(io_buffer.data(), got));
+                           std::span<const std::byte>(chunk_array.data(), got));
          total += got;
       }
       result.read_seconds = seconds_since(start);
@@ -345,7 +350,7 @@ auto main(int argc, char **argv) -> int {
 
       std::cout << std::format("Payload: {} MiB ({} bytes)\n"
                                "Chunk size: {} bytes\n"
-                               "Custom stdio buffer: {} bytes\n\n",
+                               "Buffer size: {} bytes\n\n",
                                config.size_mib, bytes_u64,
                                std::min(default_chunk_size, bytes),
                                config.buffer_size);
