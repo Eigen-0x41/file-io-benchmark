@@ -86,10 +86,10 @@ jobs:
 
          - name: Run benchmark
            run: |
-              ./build/file_io_benchmark --size-mib "${{ inputs.benchmark_size_mib }}" --directory benchmark-data
+              ./build/file_io_benchmark --size-mib "${{ inputs.benchmark_size_mib || 256 }}" --directory benchmark-data
            if: runner.os == 'Windows'
            shell: pwsh
 
          - name: Run benchmark
            if: runner.os == 'Linux'
-           run: ./build/file_io_benchmark --size-mib "${{ inputs.benchmark_size_mib }}" --directory benchmark-data
+           run: ./build/file_io_benchmark --size-mib "${{ inputs.benchmark_size_mib || 256 }}" --directory benchmark-data
