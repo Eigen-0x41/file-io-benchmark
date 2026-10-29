@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -33,8 +34,9 @@ struct options {
 
 struct file_closer {
    void operator()(std::FILE *file) const noexcept {
-      if (file != nullptr)
+      if (file != nullptr) {
          std::fclose(file);
+      }
    }
 };
 
@@ -49,7 +51,8 @@ struct measurement {
    bool verified = false;
 };
 
-std::uint64_t hash_bytes(std::uint64_t hash, std::span<const std::byte> bytes) {
+auto hash_bytes(std::uint64_t hash, std::span<const std::byte> bytes)
+    -> std::uint64_t {
    for (const auto value : bytes) {
       hash ^= std::to_integer<unsigned char>(value);
       hash *= hash_prime;
@@ -57,7 +60,7 @@ std::uint64_t hash_bytes(std::uint64_t hash, std::span<const std::byte> bytes) {
    return hash;
 }
 
-std::vector<std::byte> make_payload(std::size_t size) {
+auto make_payload(std::size_t size) -> std::vector<std::byte> {
    std::vector<std::byte> payload(size);
    std::mt19937_64 engine{0x8f3d'9b71'24c6'a50dULL};
    std::uniform_int_distribution<unsigned int> distribution(0, 255);
@@ -67,7 +70,7 @@ std::vector<std::byte> make_payload(std::size_t size) {
    return payload;
 }
 
-std::uint64_t hash_payload(std::span<const std::byte> payload) {
+auto hash_payload(std::span<const std::byte> payload) -> std::uint64_t {
    return hash_bytes(hash_offset, payload);
 }
 
@@ -82,7 +85,7 @@ void print_usage() {
              << "  --help             Show this help\n";
 }
 
-bool parse_u64(std::string_view text, std::uint64_t &value) {
+auto parse_u64(std::string_view text, std::uint64_t &value) -> bool {
    if (text.empty())
       return false;
    std::uint64_t result = 0;
@@ -98,7 +101,7 @@ bool parse_u64(std::string_view text, std::uint64_t &value) {
    return true;
 }
 
-options parse_options(int argc, char **argv) {
+auto parse_options(int argc, char **argv) -> options {
    options result;
    for (int i = 1; i < argc; ++i) {
       const std::string_view arg{argv[i]};
@@ -140,25 +143,27 @@ options parse_options(int argc, char **argv) {
    return result;
 }
 
-double seconds_since(clock_type::time_point start) {
+auto seconds_since(clock_type::time_point start) -> double {
    return std::chrono::duration<double>(clock_type::now() - start).count();
 }
 
-double throughput(std::uint64_t bytes, double seconds) {
-   if (seconds <= 0.0)
+auto throughput(std::uint64_t bytes, double seconds) -> double {
+   if (seconds <= 0.0) {
       return 0.0;
+   }
    constexpr double mib = 1024.0 * 1024.0;
    return (static_cast<double>(bytes) / mib) / seconds;
 }
 
 void ensure_io(bool condition, std::string_view message) {
-   if (!condition)
+   if (!condition) {
       throw std::runtime_error(std::string(message));
+   }
 }
 
-measurement run_fstream(const std::filesystem::path &path,
-                        std::span<const std::byte> payload,
-                        std::size_t chunk_size, bool keep_files) {
+auto run_fstream(const std::filesystem::path &path,
+                 std::span<const std::byte> payload, std::size_t chunk_size,
+                 bool keep_files) -> measurement {
 
    measurement result;
    result.method = "fstream";
@@ -214,18 +219,19 @@ measurement run_fstream(const std::filesystem::path &path,
    return result;
 }
 
-measurement run_stdio(const std::filesystem::path &path,
-                      std::span<const std::byte> payload,
-                      std::size_t chunk_size, std::size_t custom_buffer_size,
-                      bool custom_buffer, bool keep_files) {
+auto run_stdio(const std::filesystem::path &path,
+               std::span<const std::byte> payload, std::size_t chunk_size,
+               std::size_t custom_buffer_size, bool custom_buffer,
+               bool keep_files) -> measurement {
 
    measurement result;
    result.method = custom_buffer ? "stdio-custom-buffer" : "stdio-default";
    result.expected_hash = hash_payload(payload);
    std::vector<std::byte> io_buffer(std::min(chunk_size, payload.size()));
    std::vector<char> stdio_buffer;
-   if (custom_buffer)
+   if (custom_buffer) {
       stdio_buffer.resize(custom_buffer_size);
+   }
 
    {
       std::FILE *file = std::fopen(path.string().c_str(), "wb");
@@ -288,35 +294,32 @@ measurement run_stdio(const std::filesystem::path &path,
 }
 
 void print_result(const measurement &result, std::uint64_t bytes) {
-   std::cout << std::left << std::setw(22) << result.method
-             << " write=" << std::right << std::setw(9) << std::fixed
-             << std::setprecision(2) << result.write_mib_s << " MiB/s"
-             << " (" << result.write_seconds << " s)"
-             << " read=" << std::setw(9) << result.read_mib_s << " MiB/s"
-             << " (" << result.read_seconds << " s)"
-             << " bytes=" << bytes
-             << " verified=" << (result.verified ? "yes" : "NO") << '\n';
+   std::cout << std::format("{:<22} write={:>9.2f} MiB/s ({:}s) read={:>9} "
+                            "({}s) bytes={} verified={}\n",
+                            result.method, result.write_mib_s,
+                            result.write_seconds, result.read_mib_s,
+                            result.read_seconds, bytes,
+                            (result.verified) ? "yes" : "NO");
 }
 
 } // namespace
 
-int main(int argc, char **argv) {
+auto main(int argc, char **argv) -> int {
    try {
       const auto config = parse_options(argc, argv);
       const auto bytes_u64 = config.size_mib * 1024ULL * 1024ULL;
       const auto bytes = static_cast<std::size_t>(bytes_u64);
       std::filesystem::create_directories(config.directory);
 
-      std::cout << "Payload: " << config.size_mib << " MiB (" << bytes_u64
-                << " bytes)\n"
-                << "Chunk size: " << std::min(default_chunk_size, bytes)
-                << " bytes\n"
-                << "Custom stdio buffer: " << config.buffer_size
-                << " bytes\n\n";
+      std::cout << std::format("Payload: {} MiB ({} bytes)\n"
+                               "Chunk size: {} bytes\n"
+                               "Custom stdio buffer: {} bytes\n\n",
+                               config.size_mib, bytes_u64,
+                               std::min(default_chunk_size, bytes),
+                               config.buffer_size);
       const auto payload = make_payload(bytes);
       const auto expected_hash = hash_payload(payload);
-      std::cout << "Expected hash: 0x" << std::hex << expected_hash << std::dec
-                << "\n\n";
+      std::cout << std::format("Expected hash: {:#x}\n\n", expected_hash);
 
       std::vector<measurement> results;
       const auto chunk_size = std::min(default_chunk_size, payload.size());
@@ -329,14 +332,14 @@ int main(int argc, char **argv) {
                                   payload, chunk_size, config.buffer_size, true,
                                   config.keep_files));
 
-      std::cout
-          << std::left << std::setw(22) << "Method"
-          << " write MiB/s / seconds | read MiB/s / seconds | verification\n";
-      for (const auto &result : results)
+      std::cout << std::format("{:<22} write MiB/s / seconds | read MiB/s / "
+                               "seconds | verification\n",
+                               "Method");
+      for (const auto &result : results) {
          print_result(result, bytes_u64);
-      const bool all_verified =
-          std::all_of(results.begin(), results.end(),
-                      [](const measurement &value) { return value.verified; });
+      }
+      const bool all_verified = std::ranges::all_of(
+          results, [](const measurement &value) { return value.verified; });
       return all_verified ? EXIT_SUCCESS : EXIT_FAILURE;
    } catch (const std::exception &e) {
       std::cerr << "error: " << e.what() << '\n';

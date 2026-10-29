@@ -1,4 +1,18 @@
-build/
-benchmark-data/
-results/
-*.bin
+# .gitignore
+
+# whitelist mode
+
+/*
+!/.gitignore
+!/.gitmodules
+!/.editorconfig
+
+#-allow list
+#--cxx
+!/src/
+!/src/*
+
+!/.clang-format
+!/.clang-tidy
+!/CMakeLists.txt
+!/LICENSE
