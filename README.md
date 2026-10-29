@@ -2,6 +2,8 @@
 
 Cross-platform file I/O benchmark for Ubuntu (`clang++`, `g++`) and Windows (`clang-cl`, MSVC `cl`), built from the same C++ source with CMake.
 
+> This project was primarily authored by ChatGPT.
+
 ## Methods
 
 - `fstream`: `std::fstream::write` / `std::fstream::read`
