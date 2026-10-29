@@ -25,6 +25,9 @@ constexpr std::size_t default_chunk_size = 1U << 20;
 constexpr std::uint64_t hash_offset = 14695981039346656037ULL;
 constexpr std::uint64_t hash_prime = 1099511628211ULL;
 
+constexpr std::uint64_t kib_size = 1024;
+constexpr std::uint64_t mib_size = kib_size * kib_size;
+
 struct options {
    std::uint64_t size_mib = 256;
    std::filesystem::path directory = "benchmark-data";
@@ -90,12 +93,14 @@ auto parse_u64(std::string_view text, std::uint64_t &value) -> bool {
       return false;
    std::uint64_t result = 0;
    for (const char c : text) {
-      if (c < '0' || c > '9')
+      if (c < '0' || c > '9') {
          return false;
+      }
       const auto digit = static_cast<std::uint64_t>(c - '0');
-      if (result > (std::numeric_limits<std::uint64_t>::max() - digit) / 10)
+      if (result > (std::numeric_limits<std::uint64_t>::max() - digit) / 10) {
          return false;
-      result = result * 10 + digit;
+      }
+      result = (result * 10) + digit;
    }
    value = result;
    return true;
@@ -136,8 +141,7 @@ auto parse_options(int argc, char **argv) -> options {
          throw std::runtime_error("Unknown argument: " + std::string(arg));
       }
    }
-   if (result.size_mib >
-       std::numeric_limits<std::size_t>::max() / (1024ULL * 1024ULL)) {
+   if (result.size_mib > std::numeric_limits<std::size_t>::max() / mib_size) {
       throw std::runtime_error("--size-mib is too large for this platform");
    }
    return result;
@@ -151,7 +155,7 @@ auto throughput(std::uint64_t bytes, double seconds) -> double {
    if (seconds <= 0.0) {
       return 0.0;
    }
-   constexpr double mib = 1024.0 * 1024.0;
+   constexpr double mib = mib_size;
    return (static_cast<double>(bytes) / mib) / seconds;
 }
 
@@ -225,7 +229,7 @@ auto run_stdio(const std::filesystem::path &path,
                bool keep_files) -> measurement {
 
    measurement result;
-   result.method = custom_buffer ? "stdio-custom-buffer" : "stdio-default";
+   result.method = (custom_buffer) ? "stdio-custom-buffer" : "stdio-default";
    result.expected_hash = hash_payload(payload);
    std::vector<std::byte> io_buffer(std::min(chunk_size, payload.size()));
    std::vector<char> stdio_buffer;
@@ -307,7 +311,7 @@ void print_result(const measurement &result, std::uint64_t bytes) {
 auto main(int argc, char **argv) -> int {
    try {
       const auto config = parse_options(argc, argv);
-      const auto bytes_u64 = config.size_mib * 1024ULL * 1024ULL;
+      const auto bytes_u64 = config.size_mib * mib_size;
       const auto bytes = static_cast<std::size_t>(bytes_u64);
       std::filesystem::create_directories(config.directory);
 
