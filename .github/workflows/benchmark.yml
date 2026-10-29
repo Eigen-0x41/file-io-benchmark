@@ -1,0 +1,93 @@
+name: File I/O benchmark
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "CMakeLists.txt"
+      - "src/**"
+      - ".github/workflows/benchmark.yml"
+  pull_request:
+    paths:
+      - "CMakeLists.txt"
+      - "src/**"
+      - ".github/workflows/benchmark.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    name: ${{ matrix.os }} / ${{ matrix.compiler }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: Ubuntu
+            runner: ubuntu-latest
+            compiler: GCC
+            cc: gcc
+            cxx: g++
+          - os: Ubuntu
+            runner: ubuntu-latest
+            compiler: Clang
+            cc: clang
+            cxx: clang++
+          - os: Windows
+            runner: windows-latest
+            compiler: MSVC
+            cc: cl
+            cxx: cl
+          - os: Windows
+            runner: windows-latest
+            compiler: Clang
+            cc: clang-cl
+            cxx: clang-cl
+
+    env:
+      BENCHMARK_SIZE_MIB: "256"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up GCC
+        if: matrix.compiler == 'GCC'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++
+
+      - name: Set up Clang
+        if: matrix.os == 'Ubuntu' && matrix.compiler == 'Clang'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang
+
+      - name: Configure (Ubuntu)
+        if: runner.os == 'Linux'
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=${{ matrix.cc }} -DCMAKE_CXX_COMPILER=${{ matrix.cxx }}
+
+      - name: Set up MSVC environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Configure (Windows MSVC)
+        if: matrix.compiler == 'MSVC'
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl
+
+      - name: Configure (Windows Clang)
+        if: matrix.os == 'Windows' && matrix.compiler == 'Clang'
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Run benchmark
+        run: |
+          ./build/file_io_benchmark --size-mib $env:BENCHMARK_SIZE_MIB --directory benchmark-data
+        if: runner.os == 'Windows'
+        shell: pwsh
+
+      - name: Run benchmark
+        if: runner.os == 'Linux'
+        run: ./build/file_io_benchmark --size-mib "$BENCHMARK_SIZE_MIB" --directory benchmark-data

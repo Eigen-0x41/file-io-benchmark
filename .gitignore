@@ -1,0 +1,4 @@
+build/
+benchmark-data/
+results/
+*.bin
