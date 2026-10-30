@@ -187,8 +187,12 @@ auto run_fstream(const std::filesystem::path &path,
    {
       std::filebuf fbuf{};
       if (buffer_size) {
-         fbuf.pubsetbuf((*buffer_size == 0) ? nullptr : buffer_array.data(),
-                        static_cast<std::streamsize>(*buffer_size));
+         if (!buffer_array.empty()) {
+            fbuf.pubsetbuf(buffer_array.data(),
+                           static_cast<std::streamsize>(buffer_array.size()));
+         } else {
+            fbuf.pubsetbuf(nullptr, 0);
+         }
       }
       fbuf.open(path, std::ios::out | std::ios::binary | std::ios::trunc);
       ensure_io(fbuf.is_open(), "fstream: could not open output file");
@@ -212,8 +216,12 @@ auto run_fstream(const std::filesystem::path &path,
    {
       std::filebuf fbuf{};
       if (buffer_size) {
-         fbuf.pubsetbuf((*buffer_size == 0) ? nullptr : buffer_array.data(),
-                        static_cast<std::streamsize>(*buffer_size));
+         if (!buffer_array.empty()) {
+            fbuf.pubsetbuf(buffer_array.data(),
+                           static_cast<std::streamsize>(buffer_array.size()));
+         } else {
+            fbuf.pubsetbuf(nullptr, 0);
+         }
       }
       fbuf.open(path, std::ios::in | std::ios::binary);
       ensure_io(fbuf.is_open(), "fstream: could not open input file");
@@ -270,12 +278,14 @@ auto run_stdio(const std::filesystem::path &path,
       ensure_io(file != nullptr, "fopen: could not open output file");
       std::unique_ptr<std::FILE, file_closer> handle(file);
       if (buffer_size) {
-         ensure_io(
-             std::setvbuf(file,
-                          (*buffer_size == 0) ? nullptr : buffer_array.data(),
-                          (*buffer_size == 0) ? _IONBF : _IOFBF,
-                          buffer_array.size()) == 0,
-             "setvbuf failed for output file");
+         constexpr auto emessage = "setvbuf failed for output file";
+         if (!buffer_array.empty()) {
+            ensure_io(std::setvbuf(file, buffer_array.data(), _IOFBF,
+                                   buffer_array.size()) == 0,
+                      emessage);
+         } else {
+            ensure_io(std::setvbuf(file, nullptr, _IONBF, 0) == 0, emessage);
+         }
       }
 
       const auto start = clock_type::now();
@@ -299,12 +309,14 @@ auto run_stdio(const std::filesystem::path &path,
       ensure_io(file != nullptr, "fopen: could not open input file");
       std::unique_ptr<std::FILE, file_closer> handle(file);
       if (buffer_size) {
-         ensure_io(
-             std::setvbuf(file,
-                          (*buffer_size == 0) ? nullptr : buffer_array.data(),
-                          (*buffer_size == 0) ? _IONBF : _IOFBF,
-                          buffer_array.size()) == 0,
-             "setvbuf failed for input file");
+         constexpr auto emessage = "setvbuf failed for input file";
+         if (!buffer_array.empty()) {
+            ensure_io(std::setvbuf(file, buffer_array.data(), _IOFBF,
+                                   buffer_array.size()) == 0,
+                      emessage);
+         } else {
+            ensure_io(std::setvbuf(file, nullptr, _IONBF, 0) == 0, emessage);
+         }
       }
 
       const auto start = clock_type::now();
