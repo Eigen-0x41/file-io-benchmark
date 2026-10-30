@@ -114,12 +114,14 @@ auto parse_options(int argc, char **argv) -> options {
       if (arg == "--help") {
          print_usage();
          std::exit(EXIT_SUCCESS);
-      } else if (arg == "--keep-files") {
+      }
+      if (arg == "--keep-files") {
          result.keep_files = true;
       } else if (arg == "--size-mib" || arg == "--buffer-size" ||
                  arg == "--directory") {
-         if (++i >= argc)
+         if (++i >= argc) {
             throw std::runtime_error("Missing value for " + std::string(arg));
+         }
          const std::string_view value{argv[i]};
          if (arg == "--directory") {
             result.directory = std::filesystem::path(value);
@@ -129,9 +131,9 @@ auto parse_options(int argc, char **argv) -> options {
                throw std::runtime_error("Expected a positive integer for " +
                                         std::string(arg));
             }
-            if (arg == "--size-mib")
+            if (arg == "--size-mib") {
                result.size_mib = parsed;
-            else {
+            } else {
                if (parsed > std::numeric_limits<std::size_t>::max()) {
                   throw std::runtime_error("--buffer-size is too large");
                }

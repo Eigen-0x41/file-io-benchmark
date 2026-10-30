@@ -18,6 +18,11 @@ on:
             type: string
             default: "256"
 
+         benchmark_buffer_b:
+            required: false
+            type: string
+            default: "4096"
+
 permissions:
    contents: read
 
@@ -86,10 +91,10 @@ jobs:
 
          - name: Run benchmark
            run: |
-              ./build/file_io_benchmark --size-mib "${{ inputs.benchmark_size_mib || 256 }}" --directory benchmark-data
+              ./build/file_io_benchmark --size-mib "${{ inputs.benchmark_size_mib || 256 }}" --buffer-size "${{ inputs.benchmark_buffer_b || 4096 }}" --directory benchmark-data
            if: runner.os == 'Windows'
            shell: pwsh
 
          - name: Run benchmark
            if: runner.os == 'Linux'
-           run: ./build/file_io_benchmark --size-mib "${{ inputs.benchmark_size_mib || 256 }}" --directory benchmark-data
+           run: ./build/file_io_benchmark --size-mib "${{ inputs.benchmark_size_mib || 256 }}" --buffer-size "${{ inputs.benchmark_buffer_b || 4096 }}"  --directory benchmark-data
