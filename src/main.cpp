@@ -127,10 +127,10 @@ auto parse_options(int argc, char **argv) -> options {
             result.directory = std::filesystem::path(value);
          } else {
             std::uint64_t parsed = 0;
-            if (!parse_u64(value, parsed) || parsed == 0) {
-               throw std::runtime_error("Expected a positive integer for " +
-                                        std::string(arg));
-            }
+            // if (!parse_u64(value, parsed) || parsed == 0) {
+            //    throw std::runtime_error("Expected a positive integer for " +
+            //                             std::string(arg));
+            // }
             if (arg == "--size-mib") {
                result.size_mib = parsed;
             } else {
@@ -187,7 +187,7 @@ auto run_fstream(const std::filesystem::path &path,
    {
       std::filebuf fbuf{};
       if (buffer_size) {
-         fbuf.pubsetbuf(buffer_array.data(),
+         fbuf.pubsetbuf((*buffer_size == 0) ? nullptr : buffer_array.data(),
                         static_cast<std::streamsize>(*buffer_size));
       }
       fbuf.open(path, std::ios::out | std::ios::binary | std::ios::trunc);
@@ -212,11 +212,11 @@ auto run_fstream(const std::filesystem::path &path,
    {
       std::filebuf fbuf{};
       if (buffer_size) {
-         fbuf.pubsetbuf(buffer_array.data(),
+         fbuf.pubsetbuf((*buffer_size == 0) ? nullptr : buffer_array.data(),
                         static_cast<std::streamsize>(*buffer_size));
       }
       fbuf.open(path, std::ios::in | std::ios::binary);
-      ensure_io(fbuf.is_open(), "fstream: could not open output file");
+      ensure_io(fbuf.is_open(), "fstream: could not open input file");
       std::istream in(&fbuf);
 
       auto start = clock_type::now();
@@ -270,9 +270,12 @@ auto run_stdio(const std::filesystem::path &path,
       ensure_io(file != nullptr, "fopen: could not open output file");
       std::unique_ptr<std::FILE, file_closer> handle(file);
       if (buffer_size) {
-         ensure_io(std::setvbuf(file, buffer_array.data(), _IOFBF,
-                                buffer_array.size()) == 0,
-                   "setvbuf failed for output file");
+         ensure_io(
+             std::setvbuf(file,
+                          (*buffer_size == 0) ? nullptr : buffer_array.data(),
+                          (*buffer_size == 0) ? _IONBF : _IOFBF,
+                          buffer_array.size()) == 0,
+             "setvbuf failed for output file");
       }
 
       const auto start = clock_type::now();
@@ -296,9 +299,12 @@ auto run_stdio(const std::filesystem::path &path,
       ensure_io(file != nullptr, "fopen: could not open input file");
       std::unique_ptr<std::FILE, file_closer> handle(file);
       if (buffer_size) {
-         ensure_io(std::setvbuf(file, buffer_array.data(), _IOFBF,
-                                buffer_array.size()) == 0,
-                   "setvbuf failed for input file");
+         ensure_io(
+             std::setvbuf(file,
+                          (*buffer_size == 0) ? nullptr : buffer_array.data(),
+                          (*buffer_size == 0) ? _IONBF : _IOFBF,
+                          buffer_array.size()) == 0,
+             "setvbuf failed for input file");
       }
 
       const auto start = clock_type::now();
