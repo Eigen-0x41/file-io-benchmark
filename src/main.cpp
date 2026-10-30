@@ -127,10 +127,10 @@ auto parse_options(int argc, char **argv) -> options {
             result.directory = std::filesystem::path(value);
          } else {
             std::uint64_t parsed = 0;
-            // if (!parse_u64(value, parsed) || parsed == 0) {
-            //    throw std::runtime_error("Expected a positive integer for " +
-            //                             std::string(arg));
-            // }
+            if (!parse_u64(value, parsed)) {
+               throw std::runtime_error("Failed to parse to number for " +
+                                        std::string(arg));
+            }
             if (arg == "--size-mib") {
                result.size_mib = parsed;
             } else {
